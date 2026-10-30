@@ -1,0 +1,204 @@
+name: SLCR
+description: >-
+  Install the slcr CLI (cached) and check SLCR requirements: run every
+  validator with `slcr check`, vet specifications with `slcr vet`, or
+  verify rendered Markdown with `slcr render --expect-no-diff`.
+author: Wack
+branding:
+  icon: check-square
+  color: purple
+
+inputs:
+  command:
+    description: >-
+      What to run once slcr is installed: `check` runs every validator,
+      `vet` checks that the project is well formed without running anything,
+      `render` renders specifications to Markdown (by default only checking
+      that the committed Markdown is up to date), and `none` only installs
+      slcr and puts it on PATH.
+    required: false
+    default: check
+  version:
+    description: >-
+      The slcr release to install: `latest` (the latest stable release), a
+      version such as `0.1.0` or `v0.1.0`, or another release tag. Pin a
+      version for reproducible builds.
+    required: false
+    default: latest
+  working-directory:
+    description: >-
+      The directory to run slcr in. slcr finds the project's `SLCR.toml` in
+      it or one of its parents.
+    required: false
+    default: .
+  deny-warnings:
+    description: >-
+      `check` and `vet`: fail on warnings too, such as an unsatisfied SHOULD
+      requirement.
+    required: false
+    default: "false"
+  offline:
+    description: >-
+      `check`: never fetch a tool descriptor, so one the descriptor store
+      lacks fails the check instead of being installed.
+    required: false
+    default: "false"
+  jobs:
+    description: >-
+      `check`: run at most this many validators at once. Defaults to the
+      number of CPUs.
+    required: false
+    default: ""
+  files:
+    description: >-
+      `vet`: the requirements files to vet, one per line; without any, vet
+      the whole project. `render`: the specifications to render, one per
+      line; without any, render `SPEC.slcr.toml`.
+    required: false
+    default: ""
+  expect-no-diff:
+    description: >-
+      `render`: write nothing, and fail unless each Markdown file already
+      holds exactly what its specification renders to. Set to `false` to
+      write the Markdown instead.
+    required: false
+    default: "true"
+  install-tools:
+    description: >-
+      `vet`: run `slcr tools install` first, so that the descriptors
+      `SLCR.toml` pins are in the descriptor store when vet looks for them.
+      Ignored when `files` is set, since vetting files never reads the store.
+    required: false
+    default: "true"
+  args:
+    description: >-
+      Extra arguments for the slcr command, split on whitespace (quotes are
+      not interpreted).
+    required: false
+    default: ""
+  cache:
+    description: >-
+      Cache the slcr binary with the GitHub Actions cache, keyed by the
+      release archive's SHA-256.
+    required: false
+    default: "true"
+  verify-attestation:
+    description: >-
+      Verify the release archive's GitHub artifact attestation with
+      `gh attestation verify` before installing it: that it was built by
+      wack/slcr's release workflow from the release's tag. Needs the GitHub
+      CLI, which GitHub-hosted runners have. Only tagged releases are
+      attested, so set this to `false` to install another build, such as
+      `edge`, or where `gh` is unavailable; the SHA-256 checksum is still
+      verified.
+    required: false
+    default: "true"
+  github-token:
+    description: >-
+      The token `gh attestation verify` authenticates with, which needs no
+      permissions beyond reading public data. Only used when
+      `verify-attestation` is `true` and slcr is downloaded rather than
+      restored from a cache. On GitHub Enterprise Server, pass a github.com
+      token.
+    required: false
+    default: ${{ github.token }}
+  color:
+    description: Color slcr's output in the log.
+    required: false
+    default: "true"
+  job-summary:
+    description: Add the command's output to the job summary.
+    required: false
+    default: "true"
+
+outputs:
+  version:
+    description: The installed slcr version, such as `0.1.0`.
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: The absolute path of the installed slcr binary.
+    value: ${{ steps.install.outputs.path }}
+  cache-hit:
+    description: >-
+      `true` if slcr was restored from the runner's tool cache or the GitHub
+      Actions cache rather than downloaded.
+    value: ${{ steps.install.outputs.cache-hit }}
+  exit-code:
+    description: >-
+      The exit code of the slcr command, or empty when `command` is `none`.
+      Read it from a step that runs after a failure, e.g. with
+      `if: failure()`.
+    value: ${{ steps.run.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    # Every input reaches the scripts through the environment, never through
+    # `${{ }}` in a script, so no input can inject shell.
+    - id: resolve
+      name: Resolve slcr release
+      shell: bash
+      env:
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_DENY_WARNINGS: ${{ inputs.deny-warnings }}
+        INPUT_OFFLINE: ${{ inputs.offline }}
+        INPUT_JOBS: ${{ inputs.jobs }}
+        INPUT_EXPECT_NO_DIFF: ${{ inputs.expect-no-diff }}
+        INPUT_INSTALL_TOOLS: ${{ inputs.install-tools }}
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_VERIFY_ATTESTATION: ${{ inputs.verify-attestation }}
+        INPUT_COLOR: ${{ inputs.color }}
+        INPUT_JOB_SUMMARY: ${{ inputs.job-summary }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/resolve.sh"
+
+    - id: restore
+      name: Restore slcr from cache
+      if: inputs.cache == 'true' && steps.resolve.outputs.installed != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.resolve.outputs.install-dir }}
+        key: ${{ steps.resolve.outputs.cache-key }}
+
+    - id: install
+      name: Install slcr
+      shell: bash
+      env:
+        SLCR_TAG: ${{ steps.resolve.outputs.tag }}
+        SLCR_TARGET: ${{ steps.resolve.outputs.target }}
+        SLCR_SHA256: ${{ steps.resolve.outputs.sha256 }}
+        SLCR_INSTALL_DIR: ${{ steps.resolve.outputs.install-dir }}
+        SLCR_TOOL_CACHE_HIT: ${{ steps.resolve.outputs.installed }}
+        SLCR_ACTIONS_CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+        INPUT_VERIFY_ATTESTATION: ${{ inputs.verify-attestation }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/install.sh"
+
+    # Saved right away rather than in a post step, so that a failing check
+    # still caches the binary for the next run.
+    - name: Save slcr to cache
+      if: inputs.cache == 'true' && steps.install.outputs.downloaded == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.resolve.outputs.install-dir }}
+        key: ${{ steps.resolve.outputs.cache-key }}
+
+    - id: run
+      name: Run slcr ${{ inputs.command }}
+      if: inputs.command != 'none'
+      shell: bash
+      env:
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_DENY_WARNINGS: ${{ inputs.deny-warnings }}
+        INPUT_OFFLINE: ${{ inputs.offline }}
+        INPUT_JOBS: ${{ inputs.jobs }}
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_EXPECT_NO_DIFF: ${{ inputs.expect-no-diff }}
+        INPUT_INSTALL_TOOLS: ${{ inputs.install-tools }}
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_COLOR: ${{ inputs.color }}
+        INPUT_JOB_SUMMARY: ${{ inputs.job-summary }}
+        SLCR_BIN: ${{ steps.install.outputs.path }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/run.sh"

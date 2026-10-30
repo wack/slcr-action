@@ -1,0 +1,13 @@
+formatVersion = "1"
+
+[[validator]]
+requirement = "demo/REQ-001"
+criterion = "AC-001"
+tool = "sh"
+with = { script = "test \"$(./greet.sh World)\" = 'Hello, World!'" }
+
+[[validator]]
+requirement = "demo/REQ-002"
+criterion = "AC-002"
+tool = "sh"
+with = { script = "test \"$(./greet.sh --bye World)\" = 'Goodbye, World!'" }

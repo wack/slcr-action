@@ -1,0 +1,7 @@
+formatVersion = "1"
+specs = ["SPEC.slcr.toml"]
+
+[tools.sh]
+version = "1.0.0"
+source = { path = "tools/sh.toml" }
+pin = "blake3:b86768205624c21c90e9e6c804fbba5b5eff7c0b1d475be9ddde98840cdcd155"

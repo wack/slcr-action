@@ -1,0 +1,41 @@
+"$schema" = "https://slcr.dev/reference/schemas/spec/v1.schema.json"
+formatVersion = "1"
+
+[spec]
+name = "demo"
+
+[root]
+kind = "section"
+id = "SEC-001"
+title = "Demo project"
+
+[[root.children]]
+kind = "requirement"
+id = "REQ-001"
+title = "Greeting"
+body = "The greeter MUST greet the user by name."
+modality = "MUST"
+
+[[root.children.acceptanceCriteria]]
+kind = "acceptanceCriterion"
+id = "AC-001"
+title = "Greets by name"
+body = "`greet.sh World` prints `Hello, World!`."
+
+[[root.children]]
+kind = "requirement"
+id = "REQ-002"
+title = "Farewell"
+body = "The greeter SHOULD say goodbye when asked to."
+modality = "SHOULD"
+
+[[root.children.acceptanceCriteria]]
+kind = "acceptanceCriterion"
+id = "AC-002"
+title = "Says goodbye"
+body = "`greet.sh --bye World` prints `Goodbye, World!`."
+
+[glossary]
+kind = "section"
+id = "SEC-002"
+title = "Glossary"
