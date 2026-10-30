@@ -87,13 +87,19 @@ inputs:
       Verify the release archive's GitHub artifact attestation with
       `gh attestation verify` before installing it: that it was built by
       wack/slcr's release workflow from the release's tag. Needs the GitHub
-      CLI. Only tagged releases are attested.
+      CLI, which GitHub-hosted runners have. Only tagged releases are
+      attested, so set this to `false` to install another build, such as
+      `edge`, or where `gh` is unavailable; the SHA-256 checksum is still
+      verified.
     required: false
-    default: "false"
+    default: "true"
   github-token:
     description: >-
-      The token `gh attestation verify` authenticates with. Only used when
-      `verify-attestation` is `true`.
+      The token `gh attestation verify` authenticates with, which needs no
+      permissions beyond reading public data. Only used when
+      `verify-attestation` is `true` and slcr is downloaded rather than
+      restored from a cache. On GitHub Enterprise Server, pass a github.com
+      token.
     required: false
     default: ${{ github.token }}
   color:

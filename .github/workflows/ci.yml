@@ -213,13 +213,46 @@ jobs:
         with:
           persist-credentials: false
 
-      # Without the cache, so that the archive is downloaded and verified.
-      - uses: ./
+      # Without the Actions cache throughout, so that only the tool cache and
+      # the attestation decide whether an archive is downloaded.
+      - name: Install without verifying
+        id: unverified
+        uses: ./
         with:
           command: none
           version: 0.1.0
           cache: false
-          verify-attestation: true
+          verify-attestation: false
+
+      # Verification is on by default, and an install that skipped it
+      # doesn't count: the archive is downloaded again and verified.
+      - name: Install with the default verification
+        id: verified
+        uses: ./
+        with:
+          command: none
+          version: 0.1.0
+          cache: false
+
+      - name: Install verified again
+        id: reused
+        uses: ./
+        with:
+          command: none
+          version: 0.1.0
+          cache: false
+
+      - name: Check which installs downloaded
+        env:
+          UNVERIFIED: ${{ steps.unverified.outputs.cache-hit }}
+          VERIFIED: ${{ steps.verified.outputs.cache-hit }}
+          REUSED: ${{ steps.reused.outputs.cache-hit }}
+        run: |
+          status=0
+          [[ "$UNVERIFIED" == false ]] || { echo "::error::the unverified install's cache-hit is '$UNVERIFIED'"; status=1; }
+          [[ "$VERIFIED" == false ]] || { echo "::error::the verified install reused an unverified one"; status=1; }
+          [[ "$REUSED" == true ]] || { echo "::error::the second verified install's cache-hit is '$REUSED'"; status=1; }
+          exit "$status"
 
       # `edge` is built outside the release workflow, so it isn't attested.
       - name: An unattested build
@@ -230,13 +263,20 @@ jobs:
           command: none
           version: edge
           cache: false
-          verify-attestation: true
 
       - name: Check that the unattested build was refused
         if: steps.unattested.outcome != 'failure'
         run: |
           echo "::error::the unattested build was installed"
           exit 1
+
+      - name: An unattested build, without verification
+        uses: ./
+        with:
+          command: none
+          version: edge
+          cache: false
+          verify-attestation: false
 
   cache-save:
     name: Cache (save)
@@ -276,10 +316,11 @@ jobs:
     timeout-minutes: 10
     container: alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
     steps:
-      # The action's scripts need bash, curl, tar, and xz.
+      # The action's scripts need bash, curl, tar, and xz, and verifying
+      # attestations needs the GitHub CLI.
       - name: Install prerequisites
         shell: sh
-        run: apk add --no-cache bash curl tar xz
+        run: apk add --no-cache bash curl tar xz github-cli
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

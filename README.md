@@ -111,8 +111,8 @@ All inputs are optional.
 | `install-tools` | `true` | `vet`: run `slcr tools install` first. Ignored when `files` is set. |
 | `args` | | Extra arguments for the slcr command, such as `--log-level debug`. They're split on whitespace, and quotes aren't interpreted. |
 | `cache` | `true` | Cache the slcr binary with the GitHub Actions cache. |
-| `verify-attestation` | `false` | Verify the release archive's [build attestation](#security) before installing it. Needs the GitHub CLI (`gh`). |
-| `github-token` | `${{ github.token }}` | The token `gh attestation verify` uses. It's used only when `verify-attestation` is `true`. |
+| `verify-attestation` | `true` | Verify the release archive's [build attestation](#security) before installing it. Needs the GitHub CLI (`gh`), which GitHub-hosted runners have. Set it to `false` to install an unattested build, such as `edge`, or where `gh` isn't available. The SHA-256 checksum is checked either way. |
+| `github-token` | `${{ github.token }}` | The token `gh attestation verify` uses. It needs no permissions beyond reading public data. It's used only when `verify-attestation` is `true` and slcr is downloaded rather than restored from a cache. |
 | `color` | `true` | Color slcr's output in the log. The job summary is always plain text. |
 | `job-summary` | `true` | Add the command's output to the job summary. |
 
@@ -243,14 +243,16 @@ explanation.
 
 GitHub-hosted runners have everything the action needs. Self-hosted runners
 and job containers need `bash`, `curl`, `tar` with `xz`, and either
-`sha256sum`, `shasum`, or `openssl`. Caching uses
+`sha256sum`, `shasum`, or `openssl`. To verify attestations, they also need
+the [GitHub CLI](https://cli.github.com) (`gh`). Without it, set
+`verify-attestation: false`. Caching uses
 [`actions/cache`](https://github.com/actions/cache) v6, which needs runner
 version 2.327.1 or newer. For example, an Alpine container needs:
 
 ```yaml
 container: alpine:3.22
 steps:
-  - run: apk add --no-cache bash curl tar xz
+  - run: apk add --no-cache bash curl tar xz github-cli
     shell: sh
   - uses: actions/checkout@v7
   - uses: wack/slcr-action@v1
@@ -267,9 +269,9 @@ steps:
    the runner's tool cache first, which lasts between jobs on self-hosted
    runners. If it isn't there, the action restores it from the Actions cache.
 3. **Install.** On a cache miss, the action downloads the archive over HTTPS
-   and checks it against the checksum. If `verify-attestation` is set, it also
-   checks the archive's attestation. Then it extracts the binary into the tool
-   cache. The binary is staged and moved into place, so an interrupted install
+   and checks it against the checksum. Unless `verify-attestation` is
+   `false`, it also checks the archive's attestation. Then it extracts the
+   binary into the tool cache. The binary is staged and moved into place, so an interrupted install
    never leaves a partial one behind.
 4. **Save.** The action saves the cache right after installing, not in a
    post-job step. That way, a run whose `check` fails still caches slcr.
@@ -282,18 +284,22 @@ Then the action puts slcr on `PATH` for the rest of the job.
   the slcr release publishes before it extracts anything.
 - **Build attestations.** slcr's release workflow attests each archive with
   [GitHub artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations).
-  With `verify-attestation: true`, the action runs `gh attestation verify` on
-  a downloaded archive. The archive must have been built by
-  `wack/slcr/.github/workflows/release.yml` from the tag being installed. A
-  binary restored from a cache was verified when it was first downloaded.
-  Only tagged releases are attested, so `edge` can't be verified. On GitHub
-  Enterprise Server, `github-token` must be a github.com token.
+  By default, the action runs `gh attestation verify` on every archive it
+  downloads. The archive must have been built by
+  `wack/slcr/.github/workflows/release.yml` from the tag being installed.
+  This proves where the binary came from. The checksum only shows that the
+  binary matches what the release publishes. A binary restored from a cache
+  was verified when it was first downloaded. Verified installs are cached
+  apart from unverified ones, so a binary that a `verify-attestation: false`
+  run installed is never reused by a run that verifies. Only tagged releases
+  are attested, so installing `edge` needs `verify-attestation: false`. On
+  GitHub Enterprise Server, `github-token` must be a github.com token.
 - **No script injection.** Inputs reach the action's scripts only as
   environment variables. They're never pasted into script text.
 - **Pinned dependencies.** The action pins `actions/cache` to a full commit
   SHA. Dependabot keeps that pin current.
 - **Least privilege.** The action needs only `contents: read`, to check out
-  your code. It doesn't need a token unless you verify attestations.
+  your code. The default `github.token` is enough to verify attestations.
 
 For the strongest guarantee, pin the action to a full commit SHA too:
 

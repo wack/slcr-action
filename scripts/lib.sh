@@ -80,6 +80,17 @@ validate_working_directory() {
     die "Input 'working-directory' names '$INPUT_WORKING_DIRECTORY', which is not a directory."
 }
 
+# Whether `dir` holds an install of the archive whose SHA-256 is `sha256`
+# that this run can use. With verify-attestation on, that also means one
+# whose attestation was verified when it was downloaded, so a build cached
+# by a run that didn't verify is never used by one that does.
+is_installed() {
+  local dir="$1" sha256="$2"
+  [[ -x "$dir/slcr" && -f "$dir/.sha256" ]] &&
+    [[ "$(cat "$dir/.sha256")" == "$sha256" ]] &&
+    [[ "$INPUT_VERIFY_ATTESTATION" == false || -f "$dir/.attested" ]]
+}
+
 # Downloads `url` to `dest` with retries on transient failures, and prints
 # the final HTTP status. Fails only when the transfer itself fails.
 download() {

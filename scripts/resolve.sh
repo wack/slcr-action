@@ -92,9 +92,14 @@ install_dir="${RUNNER_TOOL_CACHE:-${RUNNER_TEMP:-/tmp}}/slcr/$tag/$target"
 # A persistent tool cache, as self-hosted runners have, may already hold
 # this exact build.
 installed=false
-if [[ -x "$install_dir/slcr" && -f "$install_dir/.sha256" ]] &&
-  [[ "$(cat "$install_dir/.sha256")" == "$sha256" ]]; then
+if is_installed "$install_dir" "$sha256"; then
   installed=true
+fi
+# Verified installs are cached apart from unverified ones, for the reason
+# is_installed gives.
+cache_key="slcr-$tag-$target-$sha256"
+if [[ "$INPUT_VERIFY_ATTESTATION" == true ]]; then
+  cache_key="$cache_key-attested"
 fi
 
 echo "slcr $tag for $target: $archive, SHA-256 $sha256"
@@ -103,4 +108,4 @@ set_output target "$target"
 set_output sha256 "$sha256"
 set_output install-dir "$install_dir"
 set_output installed "$installed"
-set_output cache-key "slcr-$tag-$target-$sha256"
+set_output cache-key "$cache_key"

@@ -1,19 +1,13 @@
 #!/usr/bin/env bash
 # Installs the slcr archive resolve.sh chose, unless the tool cache or the
 # Actions cache already held it: downloads it, checks it against its
-# published SHA-256 (and, if asked, its build attestation), and extracts the
-# binary. Then puts slcr on PATH.
+# published SHA-256 and, unless verify-attestation is off, its build
+# attestation, and extracts the binary. Then puts slcr on PATH.
 
 # shellcheck source=scripts/lib.sh
 source "${GITHUB_ACTION_PATH:-$(dirname "$0")/..}/scripts/lib.sh"
 
 : "${SLCR_TAG:?}" "${SLCR_TARGET:?}" "${SLCR_SHA256:?}" "${SLCR_INSTALL_DIR:?}"
-
-# Whether the install directory holds the expected build.
-is_installed() {
-  [[ -x "$SLCR_INSTALL_DIR/slcr" && -f "$SLCR_INSTALL_DIR/.sha256" ]] &&
-    [[ "$(cat "$SLCR_INSTALL_DIR/.sha256")" == "$SLCR_SHA256" ]]
-}
 
 install_slcr() {
   local archive="slcr-$SLCR_TARGET.tar.xz"
@@ -34,13 +28,13 @@ install_slcr() {
 
   if [[ "$INPUT_VERIFY_ATTESTATION" == true ]]; then
     command -v gh >/dev/null 2>&1 ||
-      die "verify-attestation needs the GitHub CLI (gh), which is not on PATH."
+      die "Verifying slcr's build attestation needs the GitHub CLI (gh), which is not on PATH. Install gh (https://cli.github.com), or set 'verify-attestation: false' to rely on the SHA-256 checksum alone."
     echo "Verifying the build attestation of $archive"
     GH_HOST=github.com gh attestation verify "$tmp/$archive" \
       --repo "$SLCR_REPOSITORY" \
       --signer-workflow "$SLCR_RELEASE_WORKFLOW" \
       --source-ref "refs/tags/$SLCR_TAG" ||
-      die "$archive has no valid attestation that wack/slcr's release workflow built it from tag $SLCR_TAG."
+      die "$archive has no valid attestation that wack/slcr's release workflow built it from tag $SLCR_TAG. Only tagged releases are attested; to install another build, such as edge, set 'verify-attestation: false'."
     echo "Verified the build attestation"
   fi
 
@@ -62,6 +56,9 @@ install_slcr() {
   mv "$binary" "$stage/slcr"
   chmod 755 "$stage/slcr"
   printf '%s\n' "$SLCR_SHA256" >"$stage/.sha256"
+  if [[ "$INPUT_VERIFY_ATTESTATION" == true ]]; then
+    : >"$stage/.attested"
+  fi
   rm -rf "$SLCR_INSTALL_DIR"
   mv "$stage" "$SLCR_INSTALL_DIR"
 }
@@ -72,10 +69,10 @@ trap '[[ -z "$tmp" ]] || rm -rf "$tmp"' EXIT
 echo "::group::Installing slcr $SLCR_TAG ($SLCR_TARGET)"
 cache_hit=false
 downloaded=false
-if [[ "${SLCR_TOOL_CACHE_HIT:-}" == true ]] && is_installed; then
+if [[ "${SLCR_TOOL_CACHE_HIT:-}" == true ]] && is_installed "$SLCR_INSTALL_DIR" "$SLCR_SHA256"; then
   echo "Found in the tool cache: $SLCR_INSTALL_DIR"
   cache_hit=true
-elif [[ "${SLCR_ACTIONS_CACHE_HIT:-}" == true ]] && is_installed; then
+elif [[ "${SLCR_ACTIONS_CACHE_HIT:-}" == true ]] && is_installed "$SLCR_INSTALL_DIR" "$SLCR_SHA256"; then
   echo "Restored from the Actions cache: $SLCR_INSTALL_DIR"
   cache_hit=true
 else

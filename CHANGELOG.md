@@ -16,8 +16,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or `slcr render --expect-no-diff`, or only installs slcr (`none`).
 - Inputs for the common flags: `deny-warnings`, `offline`, `jobs`, `files`,
   `expect-no-diff`, `install-tools`, and `args` for anything else.
-- Opt-in verification of slcr's GitHub artifact attestation
-  (`verify-attestation`).
+- Verification of slcr's GitHub artifact attestation, on by default
+  (`verify-attestation`). A verified install never reuses a cached binary
+  that an unverified install wrote.
 - The command's output in the job summary, and an error annotation when it
   fails.
 - Outputs `version`, `path`, `cache-hit`, and `exit-code`.
