@@ -1,0 +1,6 @@
+rules:
+  # CI tests the action with `uses: ./`, the checked-out tree, which it needs
+  # for its fixtures anyway. GitHub's `$/` syntax would test the same
+  # revision, but actionlint can't parse it yet.
+  self-repository:
+    disable: true

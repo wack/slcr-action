@@ -1,0 +1,17 @@
+# Runs `with.script` with `sh -c` in the project root: green when it exits 0.
+formatVersion = "1"
+name = "sh"
+version = "1.0.0"
+
+[validator.schema]
+type = "object"
+required = ["script"]
+additionalProperties = false
+properties.script = { type = "string", minLength = 1 }
+
+[invoke]
+argv = ["sh", "-c", "{with.script}"]
+cwd = "project"
+
+[results]
+pass = [0]

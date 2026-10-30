@@ -1,0 +1,307 @@
+name: CI
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+  # Weekly, so that a new slcr release that breaks the action is noticed
+  # even when nothing here changes.
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      ZIZMOR_VERSION: 1.31.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ShellCheck
+        run: shellcheck --external-sources scripts/*.sh test/fixtures/project/greet.sh
+
+      - name: actionlint
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+
+      - name: zizmor
+        run: pipx run "zizmor==${ZIZMOR_VERSION}" --offline --format=github .
+
+  test:
+    name: Test (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      PROJECT: test/fixtures/project
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install only (command: none)"
+        id: install
+        uses: ./
+        with:
+          command: none
+
+      - name: Check the install's outputs
+        env:
+          VERSION: ${{ steps.install.outputs.version }}
+          SLCR_PATH: ${{ steps.install.outputs.path }}
+          EXIT_CODE: ${{ steps.install.outputs.exit-code }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "::error::version is '$VERSION'"; exit 1; }
+          [[ -x "$SLCR_PATH" ]] || { echo "::error::path '$SLCR_PATH' is not executable"; exit 1; }
+          [[ "$(command -v slcr)" == "$SLCR_PATH" ]] || { echo "::error::slcr on PATH is not $SLCR_PATH"; exit 1; }
+          [[ "$(slcr version)" == "v$VERSION" ]] || { echo "::error::slcr version disagrees with $VERSION"; exit 1; }
+          [[ -z "$EXIT_CODE" ]] || { echo "::error::exit-code is '$EXIT_CODE', not empty"; exit 1; }
+
+      - name: Install a pinned version
+        id: pinned
+        uses: ./
+        with:
+          command: none
+          version: 0.1.0
+
+      - name: Check the pinned version
+        env:
+          VERSION: ${{ steps.pinned.outputs.version }}
+        run: '[[ "$VERSION" == 0.1.0 ]] || { echo "::error::version is $VERSION, not 0.1.0"; exit 1; }'
+
+      - name: vet
+        id: vet
+        uses: ./
+        with:
+          command: vet
+          working-directory: ${{ env.PROJECT }}
+          deny-warnings: true
+
+      - name: Check that vet reused the tool cache
+        env:
+          CACHE_HIT: ${{ steps.vet.outputs.cache-hit }}
+          EXIT_CODE: ${{ steps.vet.outputs.exit-code }}
+        run: |
+          [[ "$CACHE_HIT" == true ]] || { echo "::error::cache-hit is '$CACHE_HIT'"; exit 1; }
+          [[ "$EXIT_CODE" == 0 ]] || { echo "::error::exit-code is '$EXIT_CODE'"; exit 1; }
+
+      - name: vet files
+        uses: ./
+        with:
+          command: vet
+          working-directory: ${{ env.PROJECT }}
+          files: |
+            SPEC.slcr.toml
+
+      - name: check
+        uses: ./
+        with:
+          command: check
+          working-directory: ${{ env.PROJECT }}
+          deny-warnings: true
+          jobs: 2
+
+      - name: render (expect no diff)
+        uses: ./
+        with:
+          command: render
+          working-directory: ${{ env.PROJECT }}
+          files: SPEC.slcr.toml
+
+      - name: render (write)
+        uses: ./
+        with:
+          command: render
+          working-directory: ${{ env.PROJECT }}
+          expect-no-diff: false
+          args: --output ${{ runner.temp }}/SPEC.md
+
+      - name: Check the written Markdown
+        run: diff -u "$PROJECT/SPEC.md" "$RUNNER_TEMP/SPEC.md"
+
+      - name: check with an unsatisfied SHOULD
+        uses: ./
+        env:
+          GREET_BREAK: bye
+        with:
+          working-directory: ${{ env.PROJECT }}
+
+      - name: check with an unsatisfied SHOULD and deny-warnings
+        id: should
+        continue-on-error: true
+        uses: ./
+        env:
+          GREET_BREAK: bye
+        with:
+          working-directory: ${{ env.PROJECT }}
+          deny-warnings: true
+
+      - name: check with an unsatisfied MUST
+        id: must
+        continue-on-error: true
+        uses: ./
+        env:
+          GREET_BREAK: hello
+        with:
+          working-directory: ${{ env.PROJECT }}
+
+      - name: An invalid input
+        id: invalid
+        continue-on-error: true
+        uses: ./
+        with:
+          command: lint
+
+      - name: A version that doesn't exist
+        id: missing
+        continue-on-error: true
+        uses: ./
+        with:
+          command: none
+          version: 0.0.0
+
+      - name: Check that the failures failed
+        env:
+          SHOULD: ${{ steps.should.outcome }} ${{ steps.should.outputs.exit-code }}
+          MUST: ${{ steps.must.outcome }} ${{ steps.must.outputs.exit-code }}
+          INVALID: ${{ steps.invalid.outcome }}
+          MISSING: ${{ steps.missing.outcome }}
+        run: |
+          status=0
+          [[ "$SHOULD" == "failure 1" ]] || { echo "::error::SHOULD with deny-warnings: $SHOULD"; status=1; }
+          [[ "$MUST" == "failure 1" ]] || { echo "::error::MUST: $MUST"; status=1; }
+          [[ "$INVALID" == failure ]] || { echo "::error::invalid input: $INVALID"; status=1; }
+          [[ "$MISSING" == failure ]] || { echo "::error::missing version: $MISSING"; status=1; }
+          exit "$status"
+
+  attestation:
+    name: Attestation (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Without the cache, so that the archive is downloaded and verified.
+      - uses: ./
+        with:
+          command: none
+          version: 0.1.0
+          cache: false
+          verify-attestation: true
+
+      # `edge` is built outside the release workflow, so it isn't attested.
+      - name: An unattested build
+        id: unattested
+        continue-on-error: true
+        uses: ./
+        with:
+          command: none
+          version: edge
+          cache: false
+          verify-attestation: true
+
+      - name: Check that the unattested build was refused
+        if: steps.unattested.outcome != 'failure'
+        run: |
+          echo "::error::the unattested build was installed"
+          exit 1
+
+  cache-save:
+    name: Cache (save)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./
+        with:
+          command: none
+          version: 0.1.0
+
+  cache-restore:
+    name: Cache (restore)
+    needs: cache-save
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: slcr
+        uses: ./
+        with:
+          command: none
+          version: 0.1.0
+      - name: Check that slcr came from the cache
+        env:
+          CACHE_HIT: ${{ steps.slcr.outputs.cache-hit }}
+        run: '[[ "$CACHE_HIT" == true ]] || { echo "::error::cache-hit is $CACHE_HIT"; exit 1; }'
+
+  container:
+    name: Container (Alpine)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container: alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+    steps:
+      # The action's scripts need bash, curl, tar, and xz.
+      - name: Install prerequisites
+        shell: sh
+        run: apk add --no-cache bash curl tar xz
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./
+        with:
+          working-directory: test/fixtures/project
+          deny-warnings: true
+
+  # A single required check for branch protection.
+  ci:
+    name: CI
+    if: always()
+    needs: [lint, test, attestation, cache-restore, container]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check that every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            [[ "$result" == success ]] || { echo "::error::a required job's result is $result"; exit 1; }
+          done
