@@ -1,8 +1,9 @@
-name: SLCR
+# The Marketplace needs a name no other action, user, or organization has,
+# and a description shorter than 125 characters (checked by CI's Lint job).
+name: SLCR Requirements Check
 description: >-
-  Install the slcr CLI (cached) and check SLCR requirements: run every
-  validator with `slcr check`, vet specifications with `slcr vet`, or
-  verify rendered Markdown with `slcr render --expect-no-diff`.
+  Install the slcr CLI and check SLCR requirements in CI: run validators,
+  vet specifications, and verify rendered Markdown.
 author: Wack
 branding:
   icon: check-square
