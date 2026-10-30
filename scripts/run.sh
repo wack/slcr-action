@@ -6,7 +6,8 @@
 source "${GITHUB_ACTION_PATH:-$(dirname "$0")/..}/scripts/lib.sh"
 
 : "${SLCR_BIN:?}"
-validate_inputs
+# resolve.sh has already validated every input, before anything was
+# downloaded; this step is given only the inputs it reads.
 
 validate_working_directory
 cd -- "$INPUT_WORKING_DIRECTORY"
