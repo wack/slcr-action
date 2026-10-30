@@ -255,7 +255,10 @@ jobs:
           exit "$status"
 
       # `edge` is built outside the release workflow, so it isn't attested.
+      # It has only Linux builds, so elsewhere it would fail for another
+      # reason.
       - name: An unattested build
+        if: runner.os == 'Linux'
         id: unattested
         continue-on-error: true
         uses: ./
@@ -265,12 +268,13 @@ jobs:
           cache: false
 
       - name: Check that the unattested build was refused
-        if: steps.unattested.outcome != 'failure'
+        if: runner.os == 'Linux' && steps.unattested.outcome != 'failure'
         run: |
           echo "::error::the unattested build was installed"
           exit 1
 
       - name: An unattested build, without verification
+        if: runner.os == 'Linux'
         uses: ./
         with:
           command: none
