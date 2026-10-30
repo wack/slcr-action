@@ -35,6 +35,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Marketplace metadata
+        run: |
+          ruby -ryaml -e '
+            description = YAML.load_file("action.yml").fetch("description")
+            abort "action.yml: the description has #{description.length} characters; the Marketplace allows fewer than 125." if description.length >= 125
+          '
+
       - name: ShellCheck
         run: shellcheck --external-sources scripts/*.sh test/fixtures/project/greet.sh
 
