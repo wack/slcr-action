@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-30
+
+The first release.
+
 ### Added
 
 - A composite action that installs the slcr CLI on Linux (x86_64 and ARM64)
@@ -23,4 +27,5 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fails.
 - Outputs `version`, `path`, `cache-hit`, and `exit-code`.
 
-[Unreleased]: https://github.com/wack/slcr-action/commits/trunk
+[Unreleased]: https://github.com/wack/slcr-action/compare/v1.0.0...trunk
+[1.0.0]: https://github.com/wack/slcr-action/releases/tag/v1.0.0
